@@ -181,7 +181,7 @@ var
   x1, y1, x2, y2, wd : Double;
   ox, oy  : TCoord;
   first, runaway : Boolean;
-  id, skipped, netless, iterated : Integer;
+  id, netless, iterated : Integer;
 begin
   Board := GetBoard;
   if Board = nil then Exit;
@@ -197,7 +197,7 @@ begin
   if FileExists(CmdPath) then DeleteFile(CmdPath);
   if FileExists(AckPath) then DeleteFile(AckPath);
 
-  ShowMessage('Lese jetzt die Tracks (ohne Top/Bottom, nur mit Net).' +
+  ShowMessage('Lese jetzt die Tracks (nur Tracks mit Net; alle Layer).' +
     #13#10#13#10 + 'Bei grossen Boards kann das einige Minuten dauern - ' +
     'Altium reagiert solange NICHT. Das ist normal, bitte NICHT abbrechen ' +
     'und nicht ueber den Task-Manager schliessen.');
@@ -219,7 +219,6 @@ begin
 
   first    := True;
   id       := 0;
-  skipped  := 0;
   netless  := 0;
   iterated := 0;
   runaway  := False;
@@ -229,15 +228,10 @@ begin
     iterated := iterated + 1;
     if iterated > MAX_ITER then begin runaway := True; Break; end;
 
-    // Layer 1 (Top) und letztes Layer (Bottom) auslassen - die grossen.
-    // Weitere Layer hier ergaenzen, z.B.  or (Trk.Layer = eMidLayer1)
-    if (Trk.Layer = eTopLayer) or (Trk.Layer = eBottomLayer) then
-    begin
-      skipped := skipped + 1;
-    end
     // Tracks OHNE Net auslassen: das sind v.a. Polygon-/Flaechen-Fuellstuecke.
     // Die Analyse braucht das Net ohnehin - ohne Net kein sinnvoller Check.
-    else if Trk.Net = nil then
+    // (Top/Bottom werden bewusst NICHT mehr gefiltert.)
+    if Trk.Net = nil then
     begin
       netless := netless + 1;
     end
@@ -295,17 +289,14 @@ begin
   if id <= 0 then
   begin
     ShowMessage('Keine verwertbaren Tracks exportiert.' + #13#10#13#10 +
-      'Top/Bottom uebersprungen: ' + IntToStr(skipped) + #13#10 +
       'ohne Net uebersprungen: ' + IntToStr(netless) + #13#10#13#10 +
-      'Sind ' + IntToStr(netless) + ' ohne Net: dann fehlt dem Board die ' +
-      'Konnektivitaet (Nets), oder es sind nur Flaechen. Bitte VC_T8_NetCheck ' +
-      'ausfuehren.');
+      'Sind alle ohne Net: dann fehlt dem Board die Konnektivitaet (Nets), ' +
+      'oder es sind nur Flaechen. Bitte VC_T8_NetCheck ausfuehren.');
     Exit;
   end;
 
   ShowMessage('tracks.json geschrieben: ' + IntToStr(id) + ' Tracks mit Net.' +
-    #13#10 + '(Top/Bottom uebersprungen: ' + IntToStr(skipped) +
-    ', ohne Net: ' + IntToStr(netless) + ')' +
+    #13#10 + '(ohne Net uebersprungen: ' + IntToStr(netless) + ')' +
     #13#10#13#10 +
     'Laeuft der Hintergrund-Watcher (start_watcher.bat, am besten im ' +
     'Windows-Autostart), oeffnet sich der Browser-Report jetzt von selbst.' +
@@ -370,8 +361,7 @@ begin
   end;
 
   // id -> IPCB_Track rekonstruieren. WICHTIG: exakt dieselbe Auswahl wie beim
-  // Export (Top/Bottom UND netlose Tracks ueberspringen), sonst passen die IDs
-  // nicht mehr zusammen.
+  // Export (nur Tracks MIT Net), sonst passen die IDs nicht mehr zusammen.
   parts := TStringList.Create;
 
   // hoechste benoetigte Track-ID ermitteln -> nur bis dahin iterieren.
@@ -397,8 +387,7 @@ begin
   begin
     iterated := iterated + 1;
     if iterated > MAX_ITER then begin runaway := True; Break; end;
-    if (Trk.Layer <> eTopLayer) and (Trk.Layer <> eBottomLayer)
-       and (Trk.Net <> nil) then
+    if Trk.Net <> nil then
       TrackList.Add(Trk);
     if TrackList.Count > maxTid then Break;   // genug gesammelt
     Trk := Iter.NextPCBObject;
