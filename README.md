@@ -62,22 +62,25 @@ altium-fixer\
    `altium\VerbindungsCheck.PrjScr` über **File → Open** laden).
 3. In der Liste die Prozedur **`RunVerbindungsCheck`** wählen → **OK**.
 
-Es öffnet sich ein kleines Fenster. Dort einmalig eintragen:
+Beim Start fragt das Skript in drei kleinen Dialogen ab:
 - **Python-Programm:** `python` (oder der volle Pfad zur `python.exe`).
-- **Skript-Ordner:** der Ordner mit `check_server.py`, z. B. `C:\Tools\altium-fixer`.
+- **Skript-Ordner:** der Ordner mit `check_server.py`, z. B. `C:\Tools\altium-fixer`
+  (dort wird auch `tracks.json` abgelegt).
 - **Port:** `8765` (Standard reicht; wird bei Belegung automatisch hochgezählt).
 
-> Tipp: Wer die Pfade fest verdrahten will, kann die Vorgabewerte oben in
-> `RunVerbindungsCheck` (Felder `PyEdit.Text` / `RepoEdit.Text`) anpassen.
+> Das Skript braucht bewusst **kein** eigenes Fenster mit Buttons: DelphiScript
+> ist bei im Code aufgebauten Formularen/Events zickig. Die Bedienung läuft
+> daher über die drei Dialoge und danach über den Browser.
 
 ---
 
 ## Benutzung (Altium-Live)
 
 1. Das gewünschte **`.PcbDoc` öffnen und aktiv** haben.
-2. Skript starten (`RunVerbindungsCheck`) → **„Board exportieren + Server starten"**.
+2. Skript starten (`RunVerbindungsCheck`) und die drei Dialoge bestätigen.
    - Das Skript liest alle Tracks, schreibt `tracks.json`, startet Python.
-   - Ein Konsolenfenster (Python) geht auf und der **Browser** öffnet den Report.
+   - Ein **schwarzes Konsolenfenster** (Python) geht auf und der **Browser**
+     öffnet den Report. Ein Hinweisdialog in Altium bestätigt, dass es läuft.
 3. Im Report jeden Fehler prüfen. Passt der grün markierte Zielpunkt, auf
    **„In Altium fixen"** klicken.
    - Der Endpunkt wandert **sofort** im Board an die richtige Stelle.
@@ -86,11 +89,12 @@ Es öffnet sich ein kleines Fenster. Dort einmalig eintragen:
 4. Betrifft ein späterer Fix einen schon geänderten Track, wird der Block als
    **veraltet** markiert – dann einfach den Check neu starten für den
    aktuellen Stand.
-5. Zum Beenden: **„Polling stoppen"**, das Python-Konsolenfenster schließen.
+5. **Zum Beenden:** das schwarze **Python-Konsolenfenster schließen**. Das Skript
+   merkt, dass der Server weg ist, beendet die Live-Übernahme und meldet „fertig".
 
-Das Fenster des Skripts muss **offen bleiben**, solange man live fixen will –
-es ist der Teil, der die Klicks abholt und ins Board schreibt. Es läuft alles
-lokal (`127.0.0.1`), keine Firewall-Freigabe nötig.
+Während des Live-Fixens läuft das Skript in Altium (Polling-Schleife) – Altium
+ist dabei mit dieser Aktion beschäftigt, das Board wird aber bei jedem Fix
+aktualisiert. Es läuft alles lokal (`127.0.0.1`), keine Firewall-Freigabe nötig.
 
 ---
 
