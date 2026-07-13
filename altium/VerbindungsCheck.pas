@@ -7,44 +7,37 @@
 {                                                                              }
 {  Bedienung in Altium:                                                        }
 {    DXP -> Run Script ... -> dieses Skript -> Prozedur "RunVerbindungsCheck"  }
-{  (oder das Skript in ein Skript-Projekt einbinden und ausfuehren)            }
 {                                                                              }
-{  Voraussetzung: Python installiert, dieses Repo-Verzeichnis bekannt          }
-{  (enthaelt check_server.py + Ordner verbindungs_check).                      }
+{  Ablauf:                                                                     }
+{   1. Drei kurze Eingaben (Python, Skript-Ordner, Port).                      }
+{   2. Board wird exportiert, Python-Server startet, Browser oeffnet Report.   }
+{   3. Im Browser "In Altium fixen" klicken -> Endpunkt wandert sofort.        }
+{   4. Zum Beenden: das schwarze Python-Konsolenfenster schliessen.            }
 {                                                                              }
-{  Hinweise:                                                                   }
-{   - Track-Referenzen liegen in einer TInterfaceList (Index = exportierte     }
-{     Track-ID). DelphiScript kennt kein "array of IPCB_Track" als Globale.    }
-{   - Zahlen werden bewusst locale-unabhaengig als Dezimal-PUNKT geschrieben   }
-{     und gelesen (deutsches Windows nutzt sonst Komma -> kaputtes JSON).      }
+{  Bewusst OHNE im Code aufgebautes Formular / Event-Handler / ShowModal -     }
+{  DelphiScript ist dabei zickig ("Invalid procedure usage",                   }
+{  "Can't access top level variable"). Stattdessen InputBox + Polling-Schleife.}
+{                                                                              }
+{  Zahlen werden locale-unabhaengig mit Dezimal-PUNKT geschrieben und beim     }
+{  Lesen sowohl Punkt als auch Komma akzeptiert (deutsches Windows).           }
 {..............................................................................}
 
 var
   Board      : IPCB_Board;
   TrackList  : TInterfaceList;   // Items[id] = IPCB_Track
   TrackCount : Integer;
-  PollTimer  : TTimer;
-  MainForm   : TForm;
-  StatusLbl  : TLabel;
-  PyEdit     : TEdit;
-  RepoEdit   : TEdit;
-  PortEdit   : TEdit;
-  StartBtn   : TButton;
-  StopBtn    : TButton;
   BaseUrl    : String;
+  RepoDir    : String;           // Ordner mit check_server.py (+ tracks.json)
   JsonPath   : String;
   PortPath   : String;
-  Polling    : Boolean;
 
 
 {------------------------------------------------------------------------------}
 { Locale-unabhaengige Zahl <-> String Umwandlung                               }
-{ (deutsches Windows nutzt Komma; wir wollen aber immer den Punkt).            }
 {------------------------------------------------------------------------------}
 function DecSep : String;
 var probe : String;
 begin
-  // Ermittelt den lokalen Dezimaltrenner (',' oder '.')
   probe := FloatToStr(1.5);      // "1,5" oder "1.5"
   Result := Copy(probe, 2, 1);
 end;
@@ -64,9 +57,7 @@ begin
   Result := r;
 end;
 
-// String -> Double, robust: akzeptiert Punkt UND Komma als Dezimaltrenner
-// (beides wird auf den lokalen Trenner normalisiert). Die Werte hier sind
-// einfache Dezimalzahlen ohne Tausendertrenner, daher eindeutig.
+// String -> Double, akzeptiert Punkt UND Komma als Dezimaltrenner.
 function DotStrToFloat(const s : String) : Double;
 var sep, c, t : String; i : Integer;
 begin
@@ -84,18 +75,6 @@ end;
 {------------------------------------------------------------------------------}
 { Kleine Helfer                                                                }
 {------------------------------------------------------------------------------}
-function TempFolder : String;
-var
-  t : String;
-begin
-  t := GetEnvironmentVariable('TEMP');
-  if t = '' then t := GetEnvironmentVariable('TMP');
-  if t = '' then t := 'C:\Temp';
-  Result := t + '\verbindungs_check';
-  if not DirectoryExists(Result) then
-    CreateDir(Result);
-end;
-
 // JSON-String escapen (manuell, ohne Set-Syntax).
 function JsonEscape(const s : String) : String;
 var i : Integer; c, r : String;
@@ -133,8 +112,7 @@ end;
 
 // HTTP GET ueber MSXML. Liefert responseText, oder '' bei Fehler.
 function HttpGet(const url : String) : String;
-var
-  http : OleVariant;
+var http : Variant;
 begin
   Result := '';
   try
@@ -148,11 +126,14 @@ begin
   end;
 end;
 
-procedure SetStatus(const s : String);
+// Einen Fix beim Server bestaetigen.
+procedure SendAck(const fid : String; ok : Boolean);
 begin
-  if StatusLbl <> nil then
-    StatusLbl.Caption := s;
-  Application.ProcessMessages;
+  if fid = '' then Exit;
+  if ok then
+    HttpGet(BaseUrl + '/ack?fix_id=' + fid + '&ok=1')
+  else
+    HttpGet(BaseUrl + '/ack?fix_id=' + fid + '&ok=0');
 end;
 
 
@@ -201,7 +182,6 @@ begin
     if Trk.Net <> nil then netName := Trk.Net.Name else netName := '';
     layName := Board.LayerName(Trk.Layer);
 
-    // Koordinaten in mm relativ zum Board-Origin (wie im Excel-Export)
     x1 := CoordToMMs(Trk.X1 - Board.XOrigin);
     y1 := CoordToMMs(Trk.Y1 - Board.YOrigin);
     x2 := CoordToMMs(Trk.X2 - Board.XOrigin);
@@ -229,52 +209,36 @@ begin
   sl.Add('}');
 
   TrackCount := TrackList.Count;
-  JsonPath := TempFolder + '\tracks.json';
+  JsonPath := RepoDir + '\tracks.json';
   PortPath := JsonPath + '.port';
-  // altes Port-File entfernen, damit wir auf das neue warten koennen
   if FileExists(PortPath) then
     DeleteFile(PortPath);
   sl.SaveToFile(JsonPath);
   sl.Free;
 
-  SetStatus('Export: ' + IntToStr(TrackCount) + ' Tracks -> ' + JsonPath);
   Result := TrackCount > 0;
+  if not Result then
+    ShowMessage('Keine Tracks gefunden. Ist das richtige PcbDoc aktiv?');
 end;
 
 
 {------------------------------------------------------------------------------}
 { Python-Server starten und auf Port-File warten                               }
 {------------------------------------------------------------------------------}
-function StartServer : Boolean;
+function StartServer(py, wishPort : String) : Boolean;
 var
-  Wsh     : OleVariant;
-  cmd     : String;
-  py, repo, srv : String;
-  wishPort : String;
-  sl      : TStringList;
-  tries   : Integer;
+  Wsh   : Variant;
+  cmd   : String;
+  srv   : String;
+  sl    : TStringList;
+  tries : Integer;
 begin
   Result := False;
-  py   := Trim(PyEdit.Text);
-  repo := Trim(RepoEdit.Text);
+  py := Trim(py);
+  wishPort := Trim(wishPort);
   if py = '' then py := 'python';
-  if repo = '' then
-  begin
-    ShowMessage('Bitte den Skript-Ordner angeben (enthaelt check_server.py).');
-    Exit;
-  end;
-  // abschliessenden Backslash entfernen
-  if Copy(repo, Length(repo), 1) = '\' then
-    repo := Copy(repo, 1, Length(repo) - 1);
-  srv := repo + '\check_server.py';
-  if not FileExists(srv) then
-  begin
-    ShowMessage('check_server.py nicht gefunden unter:'#13#10 + srv);
-    Exit;
-  end;
-
-  wishPort := Trim(PortEdit.Text);
   if wishPort = '' then wishPort := '8765';
+  srv := RepoDir + '\check_server.py';
 
   // Fenster sichtbar (1) -> Python-Ausgabe/Fehler bleiben sichtbar.
   cmd := 'cmd /k ""' + py + '" "' + srv + '" "' + JsonPath +
@@ -288,7 +252,6 @@ begin
   end;
 
   // Auf das Port-File warten (Server schreibt den echten Port hinein).
-  SetStatus('Starte Server, warte auf Bereitschaft ...');
   tries := 0;
   while (not FileExists(PortPath)) and (tries < 40) do
   begin
@@ -307,7 +270,6 @@ begin
   BaseUrl := 'http://127.0.0.1:' + Trim(sl.Text);
   sl.Free;
 
-  // kurz auf /ping warten
   tries := 0;
   while (HttpGet(BaseUrl + '/ping') <> 'pong') and (tries < 20) do
   begin
@@ -316,7 +278,6 @@ begin
     Inc(tries);
   end;
 
-  SetStatus('Server bereit: ' + BaseUrl + '  (Polling laeuft)');
   Result := True;
 end;
 
@@ -361,23 +322,9 @@ end;
 
 
 {------------------------------------------------------------------------------}
-{ Einen Fix beim Server bestaetigen. Top-Level-Prozedur (DelphiScript erlaubt  }
-{ keinen Zugriff auf aeussere lokale Variablen aus verschachtelten Prozeduren).}
+{ Eine Runde: /pending abfragen, Fixes anwenden, /ack senden                   }
 {------------------------------------------------------------------------------}
-procedure SendAck(const fid : String; ok : Boolean);
-begin
-  if fid = '' then Exit;
-  if ok then
-    HttpGet(BaseUrl + '/ack?fix_id=' + fid + '&ok=1')
-  else
-    HttpGet(BaseUrl + '/ack?fix_id=' + fid + '&ok=0');
-end;
-
-
-{------------------------------------------------------------------------------}
-{ Timer: /pending abfragen, Fixes anwenden, /ack senden                        }
-{------------------------------------------------------------------------------}
-procedure OnPoll(Sender : TObject);
+procedure PollOnce;
 var
   resp   : String;
   lines  : TStringList;
@@ -390,19 +337,13 @@ var
   curOk  : Boolean;
   anyApplied : Boolean;
 begin
-  if not Polling then Exit;
   if BaseUrl = '' then Exit;
+  // Nur anwenden, wenn das urspruengliche Board aktiv ist. Sonst gar nicht erst
+  // /pending holen (sonst blieben Fixes serverseitig als "pending" haengen).
+  if PCBServer.GetCurrentPCBBoard <> Board then Exit;
 
   resp := HttpGet(BaseUrl + '/pending');
-  if resp = '' then Exit;   // nichts zu tun oder Server kurz nicht erreichbar
-
-  // Aktuelles Board pruefen: Fixes nur anwenden, wenn dasselbe Dokument aktiv.
-  if PCBServer.GetCurrentPCBBoard <> Board then
-  begin
-    SetStatus('Anderes Dokument aktiv - Fixes pausiert. Urspruengliches ' +
-              'PcbDoc wieder aktivieren.');
-    Exit;
-  end;
+  if resp = '' then Exit;
 
   lines := TStringList.Create;
   lines.Text := resp;
@@ -424,7 +365,6 @@ begin
     xmm   := DotStrToFloat(parts[3]);
     ymm   := DotStrToFloat(parts[4]);
 
-    // Fix-Wechsel -> vorherigen bestaetigen
     if (curFid <> '') and (fid <> curFid) then
     begin
       SendAck(curFid, curOk);
@@ -443,104 +383,82 @@ begin
   lines.Free;
 
   if anyApplied then
-  begin
     Board.ViewManager_FullUpdate;
-    SetStatus('Fix angewendet. ' + FormatDateTime('hh:nn:ss', Now));
+end;
+
+
+{------------------------------------------------------------------------------}
+{ Polling-Schleife: laeuft, bis der Server nicht mehr erreichbar ist           }
+{ (User schliesst das Python-Konsolenfenster).                                 }
+{------------------------------------------------------------------------------}
+procedure PollLoop;
+var
+  misses : Integer;
+begin
+  misses := 0;
+  while misses < 10 do          // ~4 s ohne Server -> Ende
+  begin
+    if HttpGet(BaseUrl + '/ping') = 'pong' then
+    begin
+      misses := 0;
+      PollOnce;
+    end
+    else
+      Inc(misses);
+    Sleep(400);
+    Application.ProcessMessages;
   end;
 end;
 
 
 {------------------------------------------------------------------------------}
-{ Buttons                                                                      }
-{------------------------------------------------------------------------------}
-procedure OnStartClick(Sender : TObject);
-begin
-  Polling := False;
-  if not ExportBoard then Exit;
-  if not StartServer then Exit;
-  Polling := True;
-  PollTimer.Enabled := True;
-  StopBtn.Enabled := True;
-end;
-
-procedure OnStopClick(Sender : TObject);
-begin
-  Polling := False;
-  PollTimer.Enabled := False;
-  StopBtn.Enabled := False;
-  SetStatus('Polling gestoppt. Server-Fenster kann geschlossen werden.');
-end;
-
-
-{------------------------------------------------------------------------------}
-{ Form aufbauen (kein .dfm noetig)                                             }
+{ Einstieg                                                                     }
 {------------------------------------------------------------------------------}
 procedure RunVerbindungsCheck;
 var
-  y : Integer;
-  l : TLabel;
+  py, repo, wishPort : String;
 begin
-  Polling := False;
   BaseUrl := '';
   TrackList := TInterfaceList.Create;
+  try
+    py := InputBox('Verbindungs-Check',
+                   'Python-Programm (Exe oder "python"):', 'python');
+    repo := InputBox('Verbindungs-Check',
+                     'Skript-Ordner (enthaelt check_server.py):',
+                     'C:\Pfad\zu\altium-fixer');
+    wishPort := InputBox('Verbindungs-Check',
+                         'Port (wird bei Belegung hochgezaehlt):', '8765');
 
-  MainForm := TForm.Create(nil);
-  MainForm.Caption := 'Verbindungs-Check (Altium-Live)';
-  MainForm.Width := 560;
-  MainForm.Height := 300;
-  MainForm.Position := poScreenCenter;
-  MainForm.BorderStyle := bsDialog;
+    // Skript-Ordner pruefen (dort landet auch tracks.json).
+    repo := Trim(repo);
+    if repo = '' then
+    begin
+      ShowMessage('Kein Skript-Ordner angegeben. Abbruch.');
+      Exit;
+    end;
+    if Copy(repo, Length(repo), 1) = '\' then
+      repo := Copy(repo, 1, Length(repo) - 1);
+    RepoDir := repo;
+    if not FileExists(RepoDir + '\check_server.py') then
+    begin
+      ShowMessage('check_server.py nicht gefunden unter:'#13#10 +
+                  RepoDir + '\check_server.py');
+      Exit;
+    end;
 
-  y := 16;
+    if not ExportBoard then Exit;
+    if not StartServer(py, wishPort) then Exit;
 
-  l := TLabel.Create(MainForm); l.Parent := MainForm;
-  l.Left := 16; l.Top := y; l.Caption := 'Python-Programm (Exe oder "python"):';
-  PyEdit := TEdit.Create(MainForm); PyEdit.Parent := MainForm;
-  PyEdit.Left := 260; PyEdit.Top := y - 3; PyEdit.Width := 270;
-  PyEdit.Text := 'python';
-  y := y + 32;
+    ShowMessage('Server laeuft: ' + BaseUrl + #13#10#13#10 +
+                'Im Browser die Fixe anklicken - die Endpunkte wandern sofort ' +
+                'im Board (jeder Fix ist ein eigener Undo-Schritt).' + #13#10#13#10 +
+                'Zum BEENDEN das schwarze Python-Konsolenfenster schliessen. ' +
+                'Danach ist die Aktion hier fertig.');
 
-  l := TLabel.Create(MainForm); l.Parent := MainForm;
-  l.Left := 16; l.Top := y; l.Caption := 'Skript-Ordner (mit check_server.py):';
-  RepoEdit := TEdit.Create(MainForm); RepoEdit.Parent := MainForm;
-  RepoEdit.Left := 260; RepoEdit.Top := y - 3; RepoEdit.Width := 270;
-  RepoEdit.Text := 'C:\Pfad\zu\altium-fixer';
-  y := y + 32;
+    PollLoop;
 
-  l := TLabel.Create(MainForm); l.Parent := MainForm;
-  l.Left := 16; l.Top := y; l.Caption := 'Port (Wunsch, wird ggf. hochgezaehlt):';
-  PortEdit := TEdit.Create(MainForm); PortEdit.Parent := MainForm;
-  PortEdit.Left := 260; PortEdit.Top := y - 3; PortEdit.Width := 80;
-  PortEdit.Text := '8765';
-  y := y + 40;
-
-  StartBtn := TButton.Create(MainForm); StartBtn.Parent := MainForm;
-  StartBtn.Left := 16; StartBtn.Top := y; StartBtn.Width := 250; StartBtn.Height := 30;
-  StartBtn.Caption := 'Board exportieren + Server starten';
-  StartBtn.OnClick := OnStartClick;
-
-  StopBtn := TButton.Create(MainForm); StopBtn.Parent := MainForm;
-  StopBtn.Left := 280; StopBtn.Top := y; StopBtn.Width := 250; StopBtn.Height := 30;
-  StopBtn.Caption := 'Polling stoppen';
-  StopBtn.OnClick := OnStopClick;
-  StopBtn.Enabled := False;
-  y := y + 44;
-
-  StatusLbl := TLabel.Create(MainForm); StatusLbl.Parent := MainForm;
-  StatusLbl.Left := 16; StatusLbl.Top := y; StatusLbl.Width := 520;
-  StatusLbl.AutoSize := False; StatusLbl.WordWrap := True; StatusLbl.Height := 60;
-  StatusLbl.Caption := 'Bereit. Pfade pruefen, dann "Board exportieren + Server ' +
-                       'starten". Danach im Browser Fixe anklicken - sie werden ' +
-                       'live ins Board uebernommen.';
-
-  PollTimer := TTimer.Create(MainForm);
-  PollTimer.Interval := 500;
-  PollTimer.Enabled := False;
-  PollTimer.OnTimer := OnPoll;
-
-  MainForm.ShowModal;
-
-  PollTimer.Enabled := False;
-  MainForm.Free;
-  TrackList.Free;
+    ShowMessage('Verbindungs-Check beendet.');
+  finally
+    TrackList.Free;
+  end;
 end;
