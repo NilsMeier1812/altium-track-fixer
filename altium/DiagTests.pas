@@ -19,7 +19,14 @@
 
 const
   SAFELIMIT = 200000;                   // Not-Aus fuer Schleifen
-  WORKDIR   = 'C:\altium-track-fixer';  // fester Arbeitsordner
+
+// Fester Arbeitsordner - bewusst als Funktion, nicht als String-const: eine
+// String-Konstante ist in DelphiScript ein OleStr, und '+' mit einem Literal
+// wirft dann "OleStr into Double". Eine Funktion liefert einen sauberen String.
+function VCWorkDir : String;
+begin
+  Result := 'C:\altium-track-fixer';
+end;
 
 
 { --- T1: Laeuft ueberhaupt ein Skript? ------------------------------------- }
@@ -140,7 +147,7 @@ var
   sl  : TStringList;
   target : String;
 begin
-  dir := WORKDIR;
+  dir := VCWorkDir;
   target := dir + '\vc_test.txt';
   sl := TStringList.Create;
   sl.Add('Verbindungs-Check Test');
@@ -176,7 +183,7 @@ begin
   Board := PCBServer.GetCurrentPCBBoard;
   if Board = nil then begin ShowMessage('T7: Board = nil'); Exit; end;
 
-  dir := WORKDIR;
+  dir := VCWorkDir;
   target := dir + '\tracks_test.json';
 
   sl := TStringList.Create;

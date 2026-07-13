@@ -25,7 +25,6 @@
 const
   MAX_ITER = 1000000;     // Not-Bremse: bricht ab, falls der Iterator nicht endet
                           // (bei ~10k Tracks/s entspricht das ca. 100 s Obergrenze)
-  WORKDIR  = 'C:\altium-track-fixer';   // fest verdrahteter Arbeitsordner
 
 
 {------------------------------------------------------------------------------}
@@ -144,16 +143,26 @@ end;
 
 
 {------------------------------------------------------------------------------}
-{ Arbeitsordner pruefen (fest verdrahtet auf WORKDIR)                           }
+{ Fester Arbeitsordner. BEWUSST als Funktion (nicht als String-const): eine     }
+{ String-Konstante wird in DelphiScript als OleStr angelegt, und das '+' mit    }
+{ einem String-Literal wirft dann "OleStr into Double". Eine Funktion liefert    }
+{ einen sauberen String. Liegt das Repo woanders, hier den Pfad anpassen.       }
 {------------------------------------------------------------------------------}
-function CheckWorkDir : Boolean;
+function VCWorkDir : String;
 begin
-  Result := FileExists(WORKDIR + '\check_server.py');
+  Result := 'C:\altium-track-fixer';
+end;
+
+function CheckWorkDir : Boolean;
+var d : String;
+begin
+  d := VCWorkDir;
+  Result := FileExists(d + '\check_server.py');
   if not Result then
     ShowMessage('check_server.py nicht gefunden unter:' + #13#10 +
-                WORKDIR + '\check_server.py' + #13#10#13#10 +
-                'Bitte das Repo nach ' + WORKDIR + ' legen (oder die Konstante ' +
-                'WORKDIR oben im Skript anpassen).');
+                d + '\check_server.py' + #13#10#13#10 +
+                'Bitte das Repo nach ' + d + ' legen (oder VCWorkDir oben ' +
+                'im Skript anpassen).');
 end;
 
 
@@ -178,7 +187,7 @@ begin
   if Board = nil then Exit;
 
   if not CheckWorkDir then Exit;
-  WorkDir := WORKDIR;
+  WorkDir := VCWorkDir;
 
   JsonPath := WorkDir + '\tracks.json';
   CmdPath  := WorkDir + '\bridge_cmd.txt';
@@ -329,7 +338,7 @@ begin
   if Board = nil then Exit;
 
   if not CheckWorkDir then Exit;
-  WorkDir := WORKDIR;
+  WorkDir := VCWorkDir;
 
   CmdPath := WorkDir + '\bridge_cmd.txt';
   AckPath := WorkDir + '\bridge_ack.txt';
