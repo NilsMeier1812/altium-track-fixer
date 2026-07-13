@@ -122,9 +122,9 @@ schreibt.
 > → *Customize* → Kategorie *Scripts*), dann genügt nach dem Klicken im
 > Browser ein Tastendruck.
 
-Der Arbeitsordner ist **fest auf `C:\altium-track-fixer`** verdrahtet (Konstante
-`WORKDIR` oben in `VerbindungsCheck.pas`) – das Skript fragt nichts mehr ab.
-Liegt das Repo woanders, `WORKDIR` dort anpassen. Dorthin schreibt das Skript
+Der Arbeitsordner ist **fest auf `C:\altium-track-fixer`** verdrahtet (Funktion
+`VCWorkDir` oben in `VerbindungsCheck.pas`) – das Skript fragt nichts mehr ab.
+Liegt das Repo woanders, den Pfad in `VCWorkDir` anpassen. Dorthin schreibt das Skript
 `tracks.json` und die Bridge-Dateien.
 
 > Python-Pfad steht in `start_watcher.bat` / `start_server.bat`. Falls `python`
