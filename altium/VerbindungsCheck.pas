@@ -50,6 +50,7 @@ var
   JsonPath  : String;
   CmdPath   : String;           // bridge_cmd.txt  (Server -> Altium)
   AckPath   : String;           // bridge_ack.txt  (Altium -> Server)
+  ApplyRequested : Boolean;     // True = "Uebernehmen" (anwenden + Fenster neu)
 
 
 {------------------------------------------------------------------------------}
@@ -266,28 +267,17 @@ end;
 { Formular-Ereignisse                                                          }
 {------------------------------------------------------------------------------}
 procedure TVCForm.ButtonPullClick(Sender : TObject);
-var n : Integer;
 begin
-  if PCBServer = nil then
-  begin
-    LabelStatus.Caption := 'PCB-Server nicht verfuegbar.';
-    Exit;
-  end;
-  if PCBServer.GetCurrentPCBBoard <> Board then
-  begin
-    LabelStatus.Caption := 'Anderes Dokument aktiv - bitte das urspruengliche ' +
-      'PcbDoc in den Vordergrund holen und erneut "holen".';
-    Exit;
-  end;
-  n := DoApply;
-  LabelStatus.Caption :=
-    IntToStr(n) + ' Endpunkt(e) angepasst.' + #13#10#13#10 +
-    'Im Browser weiter anklicken und erneut "Aenderungen aus dem Browser holen", '+
-    'oder Schliessen. (Strg+Z macht die letzte Runde rueckgaengig.)';
+  // Fenster ZU. Das Anwenden passiert danach in der Schleife in
+  // RunVerbindungsCheck (Fenster ist dann kurz zu -> Board zeichnet neu),
+  // anschliessend geht das Fenster automatisch wieder auf.
+  ApplyRequested := True;
+  Close;
 end;
 
 procedure TVCForm.ButtonCloseClick(Sender : TObject);
 begin
+  ApplyRequested := False;   // Fertig -> nicht wieder oeffnen
   Close;
 end;
 
@@ -412,9 +402,27 @@ begin
     'Export fertig: ' + IntToStr(id) + ' Tracks mit Net ' +
     '(ohne Net: ' + IntToStr(netless) + ').' + #13#10#13#10 +
     'Der Browser-Report sollte offen sein (sonst start_watcher.bat starten). ' +
-    'Jetzt die Fehler im Browser anklicken, dann hier "Aenderungen aus dem ' +
-    'Browser holen".';
-  VCForm.ShowModal;
+    'Jetzt die Fehler im Browser anklicken, dann hier "Aenderungen uebernehmen".';
+
+  // Dauerschleife: "Uebernehmen" schliesst das Fenster, wendet die offenen Fixes
+  // an (Fenster ist dabei kurz zu -> Board wird sichtbar aktualisiert) und
+  // oeffnet es dann wieder. "Fertig" beendet.
+  repeat
+    ApplyRequested := False;
+    VCForm.ShowModal;
+    if ApplyRequested then
+    begin
+      if (PCBServer <> nil) and (PCBServer.GetCurrentPCBBoard = Board) then
+        VCForm.LabelStatus.Caption :=
+          IntToStr(DoApply) + ' Endpunkt(e) uebernommen.' + #13#10#13#10 +
+          'Im Browser weiter anklicken und wieder "Aenderungen uebernehmen", ' +
+          'oder "Fertig". (Strg+Z macht die letzte Runde rueckgaengig.)'
+      else
+        VCForm.LabelStatus.Caption :=
+          'Anderes Dokument aktiv - bitte das urspruengliche PcbDoc in den ' +
+          'Vordergrund holen, dann erneut "Aenderungen uebernehmen".';
+    end;
+  until not ApplyRequested;
 end;
 
 

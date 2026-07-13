@@ -21,7 +21,7 @@ object VCForm: TVCForm
     Top = 152
     Width = 300
     Height = 34
-    Caption = 'Aenderungen aus dem Browser holen'
+    Caption = 'Aenderungen uebernehmen'
     OnClick = ButtonPullClick
   end
   object ButtonClose: TButton
@@ -29,7 +29,7 @@ object VCForm: TVCForm
     Top = 152
     Width = 112
     Height = 34
-    Caption = 'Schliessen'
+    Caption = 'Fertig'
     OnClick = ButtonCloseClick
   end
 end

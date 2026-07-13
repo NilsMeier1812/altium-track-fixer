@@ -140,14 +140,16 @@ Liegt das Repo woanders, den Pfad in `VCWorkDir` anpassen. Dorthin schreibt das 
 3. Im Report jeden Fehler prüfen. Passt der grün markierte Zielpunkt, auf
    **„In Altium fixen"** klicken – beliebig viele. Die Blöcke zeigen
    **„wartet – in Altium 'Änderungen holen' klicken"**.
-4. Zurück in Altium: im Fenster auf **„Änderungen aus dem Browser holen"**.
-   - Alle angeklickten Fixes werden **in einem Rutsch** ins Board übernommen,
-     die Ansicht aktualisiert sich. Im Browser wechseln sie auf
-     **„Behoben in Altium"**. **`Strg+Z`** macht die Runde rückgängig.
-   - **Das Fenster bleibt offen:** im Browser weitere Fehler anklicken und
-     erneut „holen" – **ohne** erneuten (langen) Export.
-5. **„Schließen"** beendet. Für weitere Fixes danach: `ApplyFixes` (baut die
-   Zuordnung neu auf – dauert wieder etwas) oder `RunVerbindungsCheck` neu.
+4. Zurück in Altium: im Fenster auf **„Änderungen übernehmen"**.
+   - Das Fenster geht **kurz zu**, alle angeklickten Fixes werden **in einem
+     Rutsch** ins Board übernommen (das Board zeichnet dabei sichtbar neu), und
+     das Fenster **öffnet sich automatisch wieder**. Im Browser wechseln die
+     Fixes auf **„Behoben in Altium"**. **`Strg+Z`** macht die Runde rückgängig.
+   - Das ist eine **Dauerschleife:** im Browser weitere Fehler anklicken →
+     wieder „Änderungen übernehmen" → usw. – **ohne** erneuten (langen) Export.
+5. **„Fertig"** beendet die Schleife und schließt das Fenster. Für weitere Fixes
+   danach: `ApplyFixes` (baut die Zuordnung neu auf – dauert wieder etwas) oder
+   `RunVerbindungsCheck` neu.
 
 Browser ↔ Python läuft lokal über HTTP (`127.0.0.1`), Altium ↔ Python über
 Dateien im Arbeitsordner (`bridge_cmd.txt` / `bridge_ack.txt`) – keine
@@ -213,7 +215,7 @@ check_excel.py              Excel-Fallback (pandas/openpyxl + tkinter)
 start_watcher.bat           Hintergrund-Watcher (in den Autostart) – Server läuft dauerhaft
 start_server.bat            Einmal-Server (Alternative; Altium kann keinen Prozess starten)
 altium/VerbindungsCheck.pas DelphiScript: RunVerbindungsCheck (Export + Holen-Fenster) + ApplyFixes
-altium/VerbindungsCheck.dfm Formular (Status + "holen"-Button + "schliessen")
+altium/VerbindungsCheck.dfm Formular (Status + "Aenderungen uebernehmen" + "Fertig")
 tests/test_fixes.py         Geometrie- und Analyse-Tests
 ```
 
