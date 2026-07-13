@@ -19,27 +19,20 @@ Der Fehlerbericht schlägt pro Fehler automatisch einen Fix vor:
 Der Zielpunkt ist in der Zoom-Grafik **grün markiert** (mit Pfeilen von den
 alten Punkten), bevor man klickt.
 
-**Layer wählen:** Der **Top- und der Bottom-Layer werden beim Export
-übersprungen** (sie tragen bei großen Boards mit Abstand die meisten Bahnen und
-sind hier meist nicht gewollt). Das steht in `altium/VerbindungsCheck.pas` in
-`RunVerbindungsCheck` an der Zeile
+**Was exportiert wird:** alle Layer, aber **nur Tracks mit Net**. Tracks ohne
+Net sind vor allem die Füllprimitive von Kupferflächen/Polygonen – sie tragen
+kein Net, machen aber oft den Großteil der Objekte aus (z. B. 300k+). Die
+Analyse braucht das Net ohnehin (gruppiert nach Layer + Net), also fliegen sie
+raus. Das reduziert die Datenmenge drastisch und stellt sicher, dass jeder
+exportierte Track ein Net hat. Zum Prüfen der Net-Situation gibt es
+`DiagTests.VC_T8_NetCheck`.
 
-```
-if (Trk.Layer = eTopLayer) or (Trk.Layer = eBottomLayer) then
-```
-
-– dort lassen sich weitere Layer ergänzen (`or (Trk.Layer = eMidLayer1)` …) oder
-die Bedingung entfernen, um doch alles zu exportieren. Alle **exportierten**
-Layer lassen sich im Report zusätzlich über die **Layer-Filterleiste** live
-ein-/ausblenden (Checkbox je Layer mit Fehleranzahl, plus „alle"/„keine"); der
-„offen"-Zähler zählt nur die eingeblendeten Layer.
-
-**Tracks ohne Net werden ebenfalls übersprungen.** Das sind vor allem die
-Füllprimitive von Kupferflächen/Polygonen – sie tragen kein Net, machen aber
-oft den Großteil der Objekte aus (z. B. 300k+). Die Analyse braucht das Net
-ohnehin (gruppiert nach Layer + Net), also fliegen sie raus. Das reduziert die
-Datenmenge drastisch und stellt sicher, dass jeder exportierte Track ein Net
-hat. Zum Prüfen der Net-Situation gibt es `DiagTests.VC_T8_NetCheck`.
+**Layer im Report filtern:** Oben im Report gibt es eine **Layer-Filterleiste**
+(Checkbox je Layer mit Fehleranzahl, plus „alle"/„keine") – damit blendet man
+Layer live ein/aus, ohne neu zu exportieren. Der „offen"-Zähler zählt nur die
+eingeblendeten Layer. (Einen Layer schon beim Export weglassen: in
+`RunVerbindungsCheck` in der Track-Schleife eine Bedingung wie
+`if Trk.Layer = eTopLayer then ... else` ergänzen.)
 
 > **Große Boards:** Altium-Skripte iterieren einzeln über jedes Objekt – das ist
 > langsam. Während `RunVerbindungsCheck` läuft, ist Altium **einige Sekunden bis
