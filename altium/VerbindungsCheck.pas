@@ -53,8 +53,13 @@ const
 
 var
   Board     : IPCB_Board;
-  TrackList : TInterfaceList;   // Items[id] = IPCB_Track (id = Export-Index)
-  BuiltForBoard : IPCB_Board;   // Board, fuer das TrackList gebaut wurde
+  // Dynamisches Array statt TInterfaceList: dieses DelphiScript erkennt bei
+  // TInterfaceList die Member nicht zuverlaessig (.Clear/.Free/.Count schlugen
+  // als "Undeclared identifier" fehl). Array + Zaehler brauchen nur Kern-
+  // Sprachmittel (SetLength / Index / Length) - da kann nichts "undeclared" sein.
+  TrackArr   : array of IPCB_Track;   // TrackArr[id] = IPCB_Track (id = Export-Index)
+  TrackCount : Integer;               // gueltige Eintraege 0 .. TrackCount-1
+  BuiltForBoard : IPCB_Board;   // Board, fuer das TrackArr gebaut wurde
   WorkDir   : String;
   JsonPath  : String;
   CmdPath   : String;           // bridge_cmd.txt  (Server -> Altium)
@@ -139,6 +144,23 @@ begin
   list.Add(cur);
 end;
 
+// TrackArr neu leeren (alte Referenzen freigeben).
+procedure TrackReset(Dummy : Integer);
+begin
+  SetLength(TrackArr, 0);
+  TrackCount := 0;
+end;
+
+// Einen Track ans Ende von TrackArr haengen (Kapazitaet in Bloecken wachsen
+// lassen; TrackCount ist die gueltige Anzahl).
+procedure TrackAppend(Trk : IPCB_Track);
+begin
+  if TrackCount >= Length(TrackArr) then
+    SetLength(TrackArr, Length(TrackArr) + 8192);
+  TrackArr[TrackCount] := Trk;
+  TrackCount := TrackCount + 1;
+end;
+
 
 {------------------------------------------------------------------------------}
 { Fester Arbeitsordner (Funktion, nicht const -> sonst "OleStr into Double")    }
@@ -199,7 +221,7 @@ var
   okMove : Boolean;
 begin
   Result := 0;
-  if (Board = nil) or (TrackList = nil) then Exit;
+  if (Board = nil) or (TrackCount = 0) then Exit;
   if not FileExists(CmdPath) then Exit;
 
   cmd := TStringList.Create;
@@ -230,9 +252,9 @@ begin
       ymm   := DotStrToFloat(parts[4]);
 
       okMove := False;
-      if (tid >= 0) and (tid < TrackList.Count) then
+      if (tid >= 0) and (tid < TrackCount) then
       begin
-        Trk := TrackList.Items[tid];
+        Trk := TrackArr[tid];
         if Trk <> nil then
         begin
           cx := Board.XOrigin + MMsToCoord(xmm);
@@ -438,10 +460,7 @@ begin
   ox  := Board.XOrigin;
   oy  := Board.YOrigin;
 
-  // Dieses DelphiScript erkennt bei TInterfaceList weder .Clear noch .Free.
-  // Also NICHT aufraeumen, sondern einfach eine neue Liste anlegen - die alte
-  // Referenz faellt weg (harmlos: ein paar Objekte pro Altium-Sitzung).
-  TrackList := TInterfaceList.Create;
+  TrackReset(0);   // TrackArr leeren
 
   sl := TStringList.Create;
   sl.Add('{');
@@ -488,7 +507,7 @@ begin
     end
     else
     begin
-      TrackList.Add(Trk);      // Index = id
+      TrackAppend(Trk);        // Index = id
       netName := Trk.Net.Name;
       layName := Board.LayerName(Trk.Layer);
 
@@ -582,7 +601,7 @@ begin
     'Das kann bei grossen Boards einige Minuten dauern. Bitte NICHT abbrechen.';
   try VCForm.Show; Application.ProcessMessages; except end;
 
-  TrackList := TInterfaceList.Create;
+  TrackReset(0);
   Iter := Board.BoardIterator_Create;
   Iter.AddFilter_ObjectSet(MkSet(eTrackObject));
   Iter.AddFilter_LayerSet(AllLayers);
@@ -600,14 +619,14 @@ begin
       VCForm.LabelStatus.Caption :=
         'Baue die Track-Zuordnung neu auf ... bitte warten.' + #13#10#13#10 +
         'Geprueft: ' + IntToStr(iterated) + #13#10 +
-        'Zugeordnet: ' + IntToStr(TrackList.Count);
+        'Zugeordnet: ' + IntToStr(TrackCount);
       try Application.ProcessMessages; except end;
     end;
 
     // Gleicher Filter wie beim Export: TOP/BOTTOM raus, nur Tracks mit Net.
     if (Trk.Layer <> eTopLayer) and (Trk.Layer <> eBottomLayer) and
        (Trk.Net <> nil) then
-      TrackList.Add(Trk);
+      TrackAppend(Trk);
 
     Trk := Iter.NextPCBObject;
   end;
@@ -645,7 +664,7 @@ begin
   AckPath  := WorkDir + '\bridge_ack.txt';
   JumpPath := WorkDir + '\bridge_jump.txt';
 
-  if (TrackList = nil) or (TrackList.Count = 0) or (BuiltForBoard <> Board) then
+  if (TrackCount = 0) or (BuiltForBoard <> Board) then
     if not RebuildTrackList(0) then Exit;
 
   RunApplyLoop(
