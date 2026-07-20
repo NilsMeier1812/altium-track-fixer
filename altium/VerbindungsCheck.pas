@@ -316,8 +316,9 @@ begin
   ox  := Board.XOrigin;
   oy  := Board.YOrigin;
 
-  // TInterfaceList kennt hier kein .Clear -> alte Liste freigeben, neu anlegen.
-  if TrackList <> nil then TrackList.Free;
+  // Dieses DelphiScript erkennt bei TInterfaceList weder .Clear noch .Free.
+  // Also NICHT aufraeumen, sondern einfach eine neue Liste anlegen - die alte
+  // Referenz faellt weg (harmlos: ein paar Objekte pro Altium-Sitzung).
   TrackList := TInterfaceList.Create;
 
   sl := TStringList.Create;
@@ -477,8 +478,8 @@ begin
   parts.Free;
   cmd.Free;
 
-  // TInterfaceList kennt hier kein .Clear -> alte Liste freigeben, neu anlegen.
-  if TrackList <> nil then TrackList.Free;
+  // Dieses DelphiScript erkennt bei TInterfaceList weder .Clear noch .Free.
+  // Also einfach eine neue Liste anlegen (alte Referenz faellt weg).
   TrackList := TInterfaceList.Create;
   Iter := Board.BoardIterator_Create;
   Iter.AddFilter_ObjectSet(MkSet(eTrackObject));
