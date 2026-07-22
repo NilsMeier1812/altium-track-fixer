@@ -108,19 +108,49 @@ function Install-PythonViaDownload {
     Remove-Item $exe -ErrorAction SilentlyContinue
 }
 
+# Merkt sich, wie Python aufzurufen ist (z.B. @("py","-3") oder @("python")).
+$script:PyCmd = $null
+
+# Prueft, ob ein Aufruf ein ECHTES Python ist (liefert "Python X.Y.Z" zurueck).
+# Der Microsoft-Store-Platzhalter gibt stattdessen einen Hinweistext aus und
+# faellt hier durch.
+function Test-PythonCall($file, [string[]]$verArgs) {
+    try { $out = (& $file @verArgs) 2>&1 | Out-String } catch { return $null }
+    if ($out -match 'Python\s+(\d+\.\d+\.\d+)') { return "Python $($Matches[1])" }
+    return $null
+}
+
+# Findet ein echtes Python und setzt $script:PyCmd. $null, wenn keins da ist.
+# WICHTIG: Windows legt in ...\WindowsApps einen Schein-"python.exe" an, der nur
+# den Microsoft Store oeffnet. Der wird hier bewusst ausgeschlossen; stattdessen
+# wird zuerst der py-Launcher (nicht vom Alias betroffen) genutzt.
+function Find-Python {
+    Update-EnvPath
+    # 1) py-Launcher bevorzugen (immun gegen den Store-Alias)
+    if (Have "py") {
+        $v = Test-PythonCall "py" @("-3", "--version")
+        if ($v) { $script:PyCmd = @("py", "-3"); return $v }
+    }
+    # 2) echtes python.exe im PATH - den WindowsApps-Platzhalter ueberspringen
+    foreach ($c in @(Get-Command python -All -ErrorAction SilentlyContinue)) {
+        if ($c.Source -and ($c.Source -like "*\WindowsApps\*")) { continue }
+        $v = Test-PythonCall $c.Source @("--version")
+        if ($v) { $script:PyCmd = @($c.Source); return $v }
+    }
+    return $null
+}
+
 function Ensure-Python {
     Info "Pruefe Python ..."
-    Update-EnvPath
-    if (Have "python") {
-        $v = (& python --version) 2>&1
-        Ok "Python gefunden: $v"
-        return
-    }
-    Warn "Python nicht gefunden - wird installiert."
+    $v = Find-Python
+    if ($v) { Ok "Python gefunden: $v"; return }
+
+    Warn "Kein echtes Python gefunden (evtl. nur der Microsoft-Store-Platzhalter)."
+    Warn "Python wird jetzt installiert ..."
     if ($hasWinget) { Install-PythonViaWinget } else { Install-PythonViaDownload }
-    Update-EnvPath
-    if (Have "python") {
-        $v = (& python --version) 2>&1
+
+    $v = Find-Python
+    if ($v) {
         Ok "Python installiert: $v"
     } else {
         throw "Python-Installation fehlgeschlagen oder noch nicht im PATH. " +
@@ -212,9 +242,15 @@ function Ensure-Requirements {
     Info "Installiere Python-Pakete fuer den Excel-Modus (optional) ..."
     $req = Join-Path $InstallDir "requirements.txt"
     if (-not (Test-Path $req)) { Warn "requirements.txt nicht gefunden - uebersprungen."; return }
+    if (-not $script:PyCmd) {
+        Warn "Kein Python-Aufruf bekannt - Excel-Pakete uebersprungen."; return
+    }
+    # $script:PyCmd ist z.B. @("py","-3") oder @("C:\...\python.exe").
+    $py   = $script:PyCmd[0]
+    $rest = @($script:PyCmd | Select-Object -Skip 1)
     try {
-        & python -m pip install --upgrade pip | Out-Host
-        & python -m pip install -r $req | Out-Host
+        & $py @rest -m pip install --upgrade pip | Out-Host
+        & $py @rest -m pip install -r $req | Out-Host
         Ok "Excel-Pakete installiert (pandas, openpyxl)."
     } catch {
         Warn "pip-Installation fehlgeschlagen. Der Altium-Live-Modus laeuft trotzdem"
