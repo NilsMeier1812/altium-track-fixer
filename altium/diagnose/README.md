@@ -61,3 +61,14 @@ Am Ende eine `ShowMessage` mit allen Zahlen. Deutung:
 > Query und deselektiert am Ende alles). Sonst wird nichts am Board geändert.
 > Dieses Skript ist ein **Experiment** und liegt bewusst nur auf dem
 > Entwicklungs-Branch, nicht auf `main`.
+
+## QuerySelectSendMsg.pas (Experiment: Maske + „Select All" via SendMessage)
+
+Folgetest, nachdem sich zeigte: `PCB:RunQuery` **maskiert** korrekt, **selektiert**
+aber nicht, und `RunProcess(PCB:RunQuery)` kollidiert mit der Skript-Engine
+(„Another script executing now"). Prozedur **`TestMaskThenSelect`** geht deshalb
+über `Client.SendMessage` (umgeht die Kollision) in zwei Schritten: **Maske
+setzen** (nur Tracks mit Net aktiv) → **„Select All"** (respektiert die Maske) →
+Selektion per Index durchzählen. Eigenes Projekt `QuerySelectSendMsg.PrjScr`.
+Falls `Client` in der Umgebung fehlt: „Undeclared identifier: Client" beim Start —
+dann ist dieser Weg nicht möglich (die anderen Testdateien bleiben lauffähig).
