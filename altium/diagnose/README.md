@@ -27,3 +27,32 @@ wirklich benötigten Skripte auftauchen. Zum Ausführen bei Bedarf:
 
 1. In Altium **DXP → Run Script…** → **Browse** → diese `DiagTests.pas` wählen.
 2. Die gewünschte `VC_T*`-Prozedur auswählen und starten.
+
+## QueryFilterTest.pas (Experiment: Netless-Vorfilter)
+
+Testet, ob sich Tracks **ohne Net** über die native Query-Engine **vorfiltern**
+lassen (wie im PCB-Filter-Panel `(ObjectKind = 'Track') And Not (Net = 'No Net')`),
+statt sie einzeln in der Schleife per `Trk.Net = nil` auszusortieren.
+
+Prozedur **`TestQueryFilter`** macht in einem Durchlauf:
+
+- **Referenz** per Voll-Iteration: Tracks gesamt / mit Net / mit Net & ohne
+  TOP-BOTTOM, mit Zeitmessung.
+- **Query-Vorfilter** über `RunProcess('PCB:RunQuery')` (Tracks mit Net
+  selektieren), mit Zeitmessung.
+- **Kreuzcheck**: `SelectecObjectCount` direkt **und** nochmal über alle Tracks
+  `Selected` zählen.
+
+Am Ende eine `ShowMessage` mit allen Zahlen. Deutung:
+
+- Kommt beim Start **„Undeclared identifier: RunProcess"** (o. ä.): der
+  Query-Aufruf existiert in dieser DelphiScript-Umgebung nicht → es bleibt beim
+  Prüfen pro Primitive.
+- Läuft es, aber **Selected = 0**: Prozess/Parameter greifen anders → die
+  gemeldeten Zahlen schicken, dann passe ich die Parameter an.
+- **Selected == „mit Net"**: funktioniert → der Umbau lohnt sich.
+
+> **Achtung:** Das Skript **verändert deine aktuelle Auswahl** (selektiert per
+> Query und deselektiert am Ende alles). Sonst wird nichts am Board geändert.
+> Dieses Skript ist ein **Experiment** und liegt bewusst nur auf dem
+> Entwicklungs-Branch, nicht auf `main`.
